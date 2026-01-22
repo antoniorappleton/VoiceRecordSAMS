@@ -82,7 +82,7 @@ if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
     } else if (!window.speechSynthesis.speaking) {
       // Auto restart if synthesized speech isn't playing
       // This prevents an infinite loop if onend is triggered during synthesis
-      recognition.start();
+      safeStartRecognition();
     }
   };
 } else {
@@ -91,17 +91,33 @@ if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
   voiceTrigger.disabled = true;
 }
 
+// Safe start function to avoid "already started" errors
+function safeStartRecognition() {
+  if (recognition && !isListening) {
+    try {
+      recognition.start();
+    } catch (e) {
+      console.warn("Recognition already started or error:", e);
+    }
+  }
+}
+
 function startListening() {
   if (currentFieldIndex === -1) {
     advanceToNextField();
   }
-  recognition.start();
+  safeStartRecognition();
 }
 
 function stopListening() {
   isListening = false;
   voiceTrigger.classList.remove("listening");
   voiceWaves.classList.remove("active");
+  try {
+    recognition.stop();
+  } catch (e) {
+    /* ignore */
+  }
 }
 
 function advanceToNextField() {
@@ -147,7 +163,8 @@ function handleVoiceInput(text) {
     if (parsedDate) {
       input.value = parsedDate;
     } else {
-      input.value = text; // Fallback to raw text if it can't be formatted
+      // Don't set invalid date to avoid console warning
+      showToast("Data inválida. Tente: '22 de janeiro de 2026'");
     }
   } else {
     input.value = text.charAt(0).toUpperCase() + text.slice(1);
@@ -204,12 +221,15 @@ function speakPrompt(text) {
 
   // Stop recognition while speaking to avoid feedback
   if (isListening && recognition) {
-    recognition.stop();
+    try {
+      recognition.stop();
+    } catch (e) {}
+    // isListening will be reset by onend, but we want to know we are pausing for speech
   }
 
   utterance.onend = () => {
     if (currentFieldIndex !== -1 && recognition) {
-      recognition.start();
+      safeStartRecognition();
     }
   };
 
@@ -226,23 +246,69 @@ function showToast(message) {
 }
 
 // --- OCR Logic ---
+// --- OCR Logic ---
 const ocrTrigger = document.getElementById("ocr-trigger");
 const ocrUpload = document.getElementById("ocr-upload");
 const ocrProgressContainer = document.getElementById("ocr-progress-container");
 const ocrBar = document.getElementById("ocr-bar");
 const ocrPercent = document.getElementById("ocr-percent");
 
+// Modal Elements
+const ocrModal = document.getElementById("ocr-preview-modal");
+const previewImage = document.getElementById("preview-image");
+const btnRotate = document.getElementById("btn-rotate");
+const btnProcess = document.getElementById("btn-process");
+const btnCancel = document.getElementById("btn-cancel");
+
+let currentRotation = 0;
+let currentFile = null;
+
 ocrTrigger.addEventListener("click", () => ocrUpload.click());
 
-ocrUpload.addEventListener("change", async (e) => {
+ocrUpload.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
+  currentFile = file;
+  currentRotation = 0;
+
+  // Show image in modal
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    previewImage.src = event.target.result;
+    previewImage.style.transform = `rotate(0deg)`;
+    ocrModal.classList.remove("hidden");
+  };
+  reader.readAsDataURL(file);
+});
+
+btnRotate.addEventListener("click", () => {
+  currentRotation = (currentRotation + 90) % 360;
+  previewImage.style.transform = `rotate(${currentRotation}deg)`;
+});
+
+btnCancel.addEventListener("click", () => {
+  ocrModal.classList.add("hidden");
+  ocrUpload.value = ""; // Reset input
+});
+
+btnProcess.addEventListener("click", async () => {
+  ocrModal.classList.add("hidden");
+
+  if (!currentFile) return;
+
   // Show progress UI
   ocrProgressContainer.classList.remove("hidden");
-  assistantPrompt.innerText = "A ler o documento...";
+  assistantPrompt.innerText = "A processar imagem...";
 
   try {
+    // Determine if we need to rotate via canvas
+    let imageToProcess = currentFile;
+
+    if (currentRotation !== 0) {
+      imageToProcess = await rotateImage(previewImage.src, currentRotation);
+    }
+
     const worker = await Tesseract.createWorker("por", 1, {
       logger: (m) => {
         if (m.status === "recognizing text") {
@@ -255,7 +321,7 @@ ocrUpload.addEventListener("change", async (e) => {
 
     const {
       data: { text },
-    } = await worker.recognize(file);
+    } = await worker.recognize(imageToProcess);
     await worker.terminate();
 
     processOCRText(text);
@@ -268,40 +334,129 @@ ocrUpload.addEventListener("change", async (e) => {
     ocrBar.style.width = "0%";
     assistantPrompt.innerText =
       "Toque no microfone para começar ou digitalize uma folha";
+    ocrUpload.value = ""; // Ready for next
   }
 });
+
+// Helper to rotate image using canvas
+function rotateImage(imageSrc, degrees) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      // Swap dimensions if rotating 90 or 270
+      if (degrees === 90 || degrees === 270) {
+        canvas.width = img.height;
+        canvas.height = img.width;
+      } else {
+        canvas.width = img.width;
+        canvas.height = img.height;
+      }
+
+      // Move context to center
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((degrees * Math.PI) / 180);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+
+      // Convert back to blob/file
+      canvas.toBlob(
+        (blob) => {
+          resolve(blob);
+        },
+        "image/jpeg",
+        0.95,
+      );
+    };
+    img.src = imageSrc;
+  });
+}
 
 function processOCRText(text) {
   console.log("OCR Extracted Text:", text);
   const lowerText = text.toLowerCase();
 
-  // Map fields by looking for common labels followed by content
-  fields.forEach((field) => {
-    // Simple regex: look for the field name followed by common separators like : or -
-    const fieldName = field.label.toLowerCase();
-    const regex = new RegExp(`${fieldName}\\s*[:\\-]?\\s*([^\\n\\r]+)`, "i");
+  // Helper to find value by regex
+  const findValue = (regex) => {
     const match = text.match(regex);
+    return match ? match[1].trim() : null;
+  };
 
-    if (match && match[1]) {
-      const value = match[1].trim();
-      const input = document.getElementById(field.id);
+  // 1. NOME (Assume first line or close to "SAMS")
+  // The label has Name under SAMS usually, or just a capitalize string line
+  // Let's try to find "SAMS" and take the next non-empty line, or look for known name pattern
+  // For this specific label, Name is "Angelo Miguel..."
+  // It often appears before "Data Nascimento"
+  const nameMatch =
+    text.match(/SAMS\s+([A-Za-z\s]+)(?=\s+Data Nascimento)/i) ||
+    text.match(/([A-Z][a-z]+ [A-Z][a-z]+ [A-Z][a-z]+)/); // Fallback generic name
+  if (nameMatch) document.getElementById("nome").value = nameMatch[1].trim();
 
-      if (field.id === "data_procedimento") {
-        const parsed = parsePortugueseDate(value);
-        if (parsed) input.value = parsed;
-      } else if (field.id === "idade") {
-        const num = value.match(/\d+/);
-        if (num) input.value = num[0];
-      } else {
-        input.value = value;
-      }
+  // 2. IDADE (Calculate from Data Nascimento)
+  const dobMatch = text.match(/Data Nascimento:\s*(\d{2}\/\d{2}\/\d{4})/i);
+  if (dobMatch) {
+    const dob = dobMatch[1];
+    document.getElementById("idade").value = calculateAge(dob);
+  }
 
-      // Highlight the field briefly
-      const group = document.querySelector(`[data-field="${field.id}"]`);
-      group.classList.add("active");
-      setTimeout(() => group.classList.remove("active"), 2000);
-    }
-  });
+  // 3. PROCESSO (SNS or the big barcode number)
+  // SNS: 378801357
+  const snsMatch = text.match(/SNS:\s*(\d+)/i);
+  if (snsMatch) {
+    document.getElementById("processo").value = snsMatch[1];
+  } else {
+    // Try the big barcode number (8 digits starting with 5 usually in this context?)
+    const barcodeMatch = text.match(/\b\d{8}\b/);
+    if (barcodeMatch)
+      document.getElementById("processo").value = barcodeMatch[0];
+  }
+
+  // 4. EPISODIO
+  const epsMatch = text.match(/Epis[óo]dio:\s*(\d+)/i);
+  if (epsMatch) document.getElementById("episodio").value = epsMatch[1];
+
+  // 5. MEDICO (Look for Dr. or Dra.)
+  const docMatch = text.match(/(Dr\.|Dra\.|Prof\.)\s+[A-Za-z\s]+/i);
+  if (docMatch)
+    document.getElementById("medico").value = docMatch[0].split("|")[0].trim();
+
+  // 6. ESPECIALIDADE
+  const specMatch = text.match(/Especialidade:\s*([A-Za-z\s]+)/i);
+  if (specMatch)
+    document.getElementById("especialidade").value = specMatch[1].trim();
+
+  // 7. ENTIDADE
+  const entMatch = text.match(/Entidade:\s*([A-Za-z0-9\s]+)/i);
+  if (entMatch) document.getElementById("entidade").value = entMatch[1].trim();
+
+  // 8. DATA PROCEDIMENTO (Admissão)
+  const dateMatch = text.match(/Admiss[ãa]o:\s*(\d{2}\/\d{2}\/\d{4})/i);
+  if (dateMatch) {
+    const parts = dateMatch[1].split("/");
+    // Convert to YYYY-MM-DD
+    document.getElementById("data_procedimento").value =
+      `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+
+  // 9. PROCEDIMENTO (Location/Room often serves as proxy or generic)
+  const procMatch =
+    text.match(/Bloco\s+[A-Za-z\s]+/i) || text.match(/Sala\s+\d+/i);
+  if (procMatch) document.getElementById("procedimento").value = procMatch[0];
+
+  showToast("Dados extraídos da etiqueta!");
+}
+
+function calculateAge(dateString) {
+  const [day, month, year] = dateString.split("/");
+  const birthDate = new Date(year, month - 1, day);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
 }
 
 // Event Listeners
@@ -315,9 +470,8 @@ voiceTrigger.addEventListener("click", () => {
 
 // Google Sheets Configuration
 // URL de deployment do Google Apps Script
-// URL de deployment do Google Apps Script
 const GOOGLE_SHEETS_WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbzy9GGE1IBL29pjiSlP2p8SJ1KHvs5yXhvC9U_DSd7Tqn6aav9S7HaYeOPmLLjmE9m8Dg/exec";
+  "https://script.google.com/macros/s/AKfycbykDnT3z33eMqHhMKdyarGd6NFEjkKIcTZfQEIG1sfQLirughlGegQNKOkC9cut3Us_8g/exec";
 
 // Mapeamento dos IDs do formulário para os nomes dos cabeçalhos da Google Sheet
 const FIELD_MAPPING = {
@@ -342,7 +496,6 @@ function getFormData() {
   return formData;
 }
 
-// Send data to Google Sheets via URL parameters
 // Send data to Google Sheets via JSON
 async function sendToGoogleSheets(data) {
   try {

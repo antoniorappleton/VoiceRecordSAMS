@@ -1,10 +1,10 @@
 const CACHE_NAME = "voiceform-v3";
 const ASSETS = [
-  "/ImageScan/",
-  "/ImageScan/index.html",
-  "/ImageScan/style.css",
-  "/ImageScan/script.js",
-  "/ImageScan/manifest.json",
+  "./",
+  "./index.html",
+  "./style.css",
+  "./script.js",
+  "./manifest.json",
 ];
 
 self.addEventListener("install", (event) => {
