@@ -393,11 +393,11 @@ function processOCRText(text) {
     text.match(/([A-Z][a-z]+ [A-Z][a-z]+ [A-Z][a-z]+)/); // Fallback generic name
   if (nameMatch) document.getElementById("nome").value = nameMatch[1].trim();
 
-  // 2. IDADE (Calculate from Data Nascimento)
-  const dobMatch = text.match(/Data Nascimento:\s*(\d{2}\/\d{2}\/\d{4})/i);
-  if (dobMatch) {
-    const dob = dobMatch[1];
-    document.getElementById("idade").value = calculateAge(dob);
+  // 2. IDADE (Read directly from label)
+  // Example: "Idade: 39"
+  const ageMatch = text.match(/Idade:\s*(\d+)/i);
+  if (ageMatch) {
+    document.getElementById("idade").value = ageMatch[1];
   }
 
   // 3. PROCESSO (SNS or the big barcode number)
@@ -427,8 +427,13 @@ function processOCRText(text) {
     document.getElementById("especialidade").value = specMatch[1].trim();
 
   // 7. ENTIDADE
-  const entMatch = text.match(/Entidade:\s*([A-Za-z0-9\s]+)/i);
-  if (entMatch) document.getElementById("entidade").value = entMatch[1].trim();
+  // Default to SAMS, or extract specific if present
+  const entMatch = text.match(/Entidade:\s*([^\n\r]+)/i);
+  if (entMatch) {
+    document.getElementById("entidade").value = entMatch[1].trim();
+  } else {
+    document.getElementById("entidade").value = "SAMS";
+  }
 
   // 8. DATA PROCEDIMENTO (Admissão)
   const dateMatch = text.match(/Admiss[ãa]o:\s*(\d{2}\/\d{2}\/\d{4})/i);
@@ -485,6 +490,32 @@ const FIELD_MAPPING = {
   data_procedimento: "Data procedimento",
   procedimento: "Procedimento",
 };
+
+// Add focus listeners to allow manual field selection
+fields.forEach((field, index) => {
+  const input = document.getElementById(field.id);
+  if (input) {
+    input.addEventListener("focus", () => {
+      // Update current index without auto-scrolling (user already clicked it)
+      currentFieldIndex = index;
+
+      // Update visual cue
+      document
+        .querySelectorAll(".input-group")
+        .forEach((group) => group.classList.remove("active"));
+      const currentGroup = document.querySelector(`[data-field="${field.id}"]`);
+      if (currentGroup) currentGroup.classList.add("active");
+
+      // Update prompt text
+      assistantPrompt.innerText = field.prompt;
+
+      // Stop any ongoing auto-sequence or previous listening
+      if (isListening) {
+        stopListening();
+      }
+    });
+  }
+});
 
 // Collect form data
 function getFormData() {
