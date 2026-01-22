@@ -315,8 +315,9 @@ voiceTrigger.addEventListener("click", () => {
 
 // Google Sheets Configuration
 // URL de deployment do Google Apps Script
+// URL de deployment do Google Apps Script
 const GOOGLE_SHEETS_WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbxGmIkMRe_b2drWfhphysLxTDx725giOEG5kkwL8MoQs99TvkjykqRg-JjXAM0M9jkjSA/exec";
+  "https://script.google.com/macros/s/AKfycbzy9GGE1IBL29pjiSlP2p8SJ1KHvs5yXhvC9U_DSd7Tqn6aav9S7HaYeOPmLLjmE9m8Dg/exec";
 
 // Mapeamento dos IDs do formulário para os nomes dos cabeçalhos da Google Sheet
 const FIELD_MAPPING = {
@@ -342,20 +343,23 @@ function getFormData() {
 }
 
 // Send data to Google Sheets via URL parameters
+// Send data to Google Sheets via JSON
 async function sendToGoogleSheets(data) {
   try {
-    // Construir URL com parâmetros mapeados para os nomes corretos da Sheet
-    const params = new URLSearchParams();
-    Object.keys(data).forEach((key) => {
-      const sheetHeader = FIELD_MAPPING[key] || key;
-      params.append(sheetHeader, data[key]);
-    });
-    params.append("timestamp", new Date().toLocaleString("pt-PT"));
+    const payload = {
+      ...data,
+      timestamp: new Date().toLocaleString("pt-PT"),
+    };
 
+    // Send as plain text (JSON string) to avoid CORS preflight issues
+    // content-type: text/plain is the "simple" request type allowed by no-cors/simple-cors
     const response = await fetch(GOOGLE_SHEETS_WEB_APP_URL, {
       method: "POST",
-      mode: "no-cors",
-      body: params,
+      mode: "no-cors", // This means we can't read the response status, but it sends the data
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8",
+      },
+      body: JSON.stringify(payload),
     });
     return true;
   } catch (error) {
