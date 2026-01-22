@@ -113,6 +113,9 @@ function stopListening() {
   isListening = false;
   voiceTrigger.classList.remove("listening");
   voiceWaves.classList.remove("active");
+  document
+    .querySelectorAll(".field-mic")
+    .forEach((btn) => btn.classList.remove("listening"));
   try {
     recognition.stop();
   } catch (e) {
@@ -140,6 +143,11 @@ function updateUIForField(field) {
   document
     .querySelectorAll(".input-group")
     .forEach((group) => group.classList.remove("active"));
+
+  // Remove listening from all small mics (in case we switched via auto-advance)
+  document
+    .querySelectorAll(".field-mic")
+    .forEach((btn) => btn.classList.remove("listening"));
 
   // Add active class to current field group
   const currentGroup = document.querySelector(`[data-field="${field.id}"]`);
@@ -236,13 +244,21 @@ function speakPrompt(text) {
   window.speechSynthesis.speak(utterance);
 }
 
-function showToast(message) {
+function showToast(message, type = "info") {
   const toast = document.getElementById("toast");
   toast.innerText = message;
-  toast.classList.add("show");
+
+  // Reset classes
+  toast.className = "toast show";
+  if (type === "success") toast.classList.add("success");
+  if (type === "error") toast.classList.add("error");
+
+  // Auto hide duration based on type
+  const duration = type === "success" || type === "error" ? 5000 : 3000;
+
   setTimeout(() => {
-    toast.classList.remove("show");
-  }, 3000);
+    toast.className = "toast hidden";
+  }, duration);
 }
 
 // --- OCR Logic ---
@@ -517,6 +533,45 @@ fields.forEach((field, index) => {
   }
 });
 
+// Listener for individual mic buttons
+document.querySelectorAll(".field-mic").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.preventDefault(); // Prevent focus accumulation issues
+    const fieldId = btn.getAttribute("data-field");
+    const index = fields.findIndex((f) => f.id === fieldId);
+
+    if (index !== -1) {
+      // Set current context
+      currentFieldIndex = index;
+
+      // If already listening on THIS button, stop.
+      if (isListening && btn.classList.contains("listening")) {
+        stopListening();
+        return;
+      }
+
+      // If listening elsewhere, stop first
+      if (isListening) {
+        stopListening();
+        // Give a tiny delay to reset before starting new
+        setTimeout(() => startListeningForField(index, btn), 200);
+      } else {
+        startListeningForField(index, btn);
+      }
+    }
+  });
+});
+
+function startListeningForField(index, btn) {
+  const field = fields[index];
+  updateUIForField(field); // This highlights group and sets prompt
+
+  // Visual feedback on the button itself
+  if (btn) btn.classList.add("listening");
+
+  startListening();
+}
+
 // Collect form data
 function getFormData() {
   const formData = {};
@@ -561,9 +616,9 @@ medicalForm.addEventListener("submit", async (e) => {
   const sent = await sendToGoogleSheets(formData);
 
   if (sent) {
-    showToast("✓ Sucesso! Registo guardado online.");
+    showToast("✅ Enviado com sucesso para a Google Sheet!", "success");
   } else {
-    showToast("✓ Sucesso! Registo guardado localmente.");
+    showToast("⚠️ Guardado localmente (Erro no envio online)", "error");
   }
 
   console.log("Form Data:", formData);
