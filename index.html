@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VoiceForm - Registo Médico</title>
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32x32.png" />
+    <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
+
+    <!-- Apple Touch Icon -->
+    <link rel="apple-touch-icon" href="assets/icon-180x180.png" />
+
+    <!-- Meta Tags PWA -->
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="VoiceForm" />
+    <meta name="description" content="Registo de formulários médicos por voz com reconhecimento de voz e OCR" />
+
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="style.css" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Tesseract OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  </head>
+
+  <body>
+    <div class="app-wrapper">
+      <!-- Header -->
+      <header class="app-header">
+        <div class="header-content">
+          <div class="header-logo">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="32" height="32" rx="8" fill="#2563eb"/>
+              <path d="M16 8C14.343 8 13 9.343 13 11V17C13 18.657 14.343 20 16 20C17.657 20 19 18.657 19 17V11C19 9.343 17.657 8 16 8Z" fill="white"/>
+              <path d="M23 14V17C23 20.866 19.866 24 16 24C12.134 24 9 20.866 9 17V14" stroke="white" stroke-width="2" stroke-linecap="round"/>
+              <path d="M16 24V28M12 28H20" stroke="white" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <div>
+              <h1>VoiceForm</h1>
+              <p>Registo Médico</p>
+            </div>
+          </div>
+          <div id="connection-status" class="status-badge online">
+            <span class="status-dot"></span>
+            Online
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <main class="app-main">
+        <!-- Voice Assistant Section -->
+        <section class="voice-section">
+          <div class="voice-card">
+            <div class="voice-header">
+              <h2>Registo por Voz</h2>
+              <p>Use o microfone ou digitalize um documento</p>
+            </div>
+
+            <div class="voice-controls">
+              <button type="button" id="voice-trigger" class="btn-voice" title="Gravar voz">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M16 4C13.791 4 12 5.791 12 8V16C12 18.209 13.791 20 16 20C18.209 20 20 18.209 20 16V8C20 5.791 18.209 4 16 4Z" />
+                  <path d="M26 14V16C26 20.418 22.418 24 16 24C9.582 24 6 20.418 6 16V14" />
+                  <path d="M16 24V28M10 28H22" />
+                </svg>
+                <span>Gravar</span>
+              </button>
+
+              <button type="button" id="ocr-trigger" class="btn-ocr" title="Digitalizar folha">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="4" width="28" height="24" rx="3" />
+                  <circle cx="16" cy="16" r="5" />
+                  <circle cx="24" cy="9" r="1.5" fill="currentColor" />
+                </svg>
+                <span>Digitalizar</span>
+              </button>
+
+              <input type="file" id="ocr-upload" accept="image/*" capture="environment" style="display: none" />
+            </div>
+
+            <div id="ocr-progress-container" class="ocr-progress hidden">
+              <p>A processar imagem...</p>
+              <div class="progress-bar">
+                <div id="ocr-bar" class="progress-fill"></div>
+              </div>
+              <span id="ocr-percent">0%</span>
+            </div>
+
+            <div class="voice-waves-container hidden" id="voice-waves-container">
+              <div class="wave-animation" id="voice-waves">
+                <span></span><span></span><span></span><span></span><span></span>
+              </div>
+              <p id="assistant-prompt">Listening...</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Form Section -->
+        <section class="form-section">
+          <form id="medical-form" class="medical-form">
+            <div class="form-header">
+              <h2>Dados do Paciente</h2>
+              <p>Preencha todas as informações necessárias</p>
+            </div>
+
+            <div class="form-grid">
+              <!-- Row 1 -->
+              <div class="form-group">
+                <label for="nome">Nome Completo *</label>
+                <input type="text" id="nome" name="nome" placeholder="Ex: João Silva" required />
+              </div>
+
+              <div class="form-group">
+                <label for="idade">Idade *</label>
+                <input type="number" id="idade" name="idade" placeholder="Ex: 45" min="1" max="150" required />
+              </div>
+
+              <!-- Row 2 -->
+              <div class="form-group">
+                <label for="processo">Número de Processo *</label>
+                <input type="text" id="processo" name="processo" placeholder="Ex: 12345" required />
+              </div>
+
+              <div class="form-group">
+                <label for="episodio">Episódio *</label>
+                <input type="text" id="episodio" name="episodio" placeholder="Ex: 001" required />
+              </div>
+
+              <!-- Row 3 -->
+              <div class="form-group">
+                <label for="medico">Médico Responsável *</label>
+                <input type="text" id="medico" name="medico" placeholder="Ex: Dr. Silva" required />
+              </div>
+
+              <div class="form-group">
+                <label for="especialidade">Especialidade *</label>
+                <input type="text" id="especialidade" name="especialidade" placeholder="Ex: Cardiologia" required />
+              </div>
+
+              <!-- Row 4 -->
+              <div class="form-group">
+                <label for="entidade">Entidade / Convénio *</label>
+                <input type="text" id="entidade" name="entidade" placeholder="Ex: SNS" required />
+              </div>
+
+              <div class="form-group">
+                <label for="data_procedimento">Data do Procedimento *</label>
+                <input type="date" id="data_procedimento" name="data_procedimento" required />
+              </div>
+
+              <!-- Row 5 - Full Width -->
+              <div class="form-group full-width">
+                <label for="procedimento">Descrição do Procedimento *</label>
+                <textarea
+                  id="procedimento"
+                  name="procedimento"
+                  placeholder="Descreva o procedimento realizado..."
+                  rows="5"
+                  required
+                ></textarea>
+              </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="form-actions">
+              <button type="reset" class="btn-secondary">Limpar</button>
+              <button type="submit" class="btn-primary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" />
+                  <polyline points="7 3 7 8 15 8" />
+                </svg>
+                Guardar Registo
+              </button>
+            </div>
+          </form>
+        </section>
+      </main>
+
+      <!-- Footer -->
+      <footer class="app-footer">
+        <p>VoiceForm © 2026 | Registo Médico com Reconhecimento de Voz</p>
+      </footer>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Scripts -->
+    <script src="script.js"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/ImageScan/sw.js")
+            .then((reg) => console.log("✅ SW Registado!", reg))
+            .catch((err) => console.log("⚠️ Erro ao registar SW:", err));
+        });
+      }
+    </script>
+  </body>
+</html>

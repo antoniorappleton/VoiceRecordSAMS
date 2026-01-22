@@ -1,0 +1,23 @@
+{
+  "name": "imagescan-pwa",
+  "version": "1.0.0",
+  "description": "VoiceForm - Registo Médico com Reconhecimento de Voz e OCR",
+  "type": "module",
+  "scripts": {
+    "generate:icons": "node generate-icons.js",
+    "dev": "npx http-server . -p 8000 -o",
+    "build": "echo 'PWA - Static files only' && npm run generate:icons"
+  },
+  "keywords": [
+    "pwa",
+    "voice-recognition",
+    "ocr",
+    "medical",
+    "registo"
+  ],
+  "author": "Antonio Appleton",
+  "license": "MIT",
+  "devDependencies": {
+    "sharp": "^0.32.0"
+  }
+}
